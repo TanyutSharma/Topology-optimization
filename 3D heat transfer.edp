@@ -1,7 +1,7 @@
 load "msh3"
 load "iovtk"
 
-int n = 20;
+int n = 30;
 int[int] lbl = [0, 1, 2, 3, 4, 5];
 mesh3 cub = cube(n, n, n, label = lbl, region = 6);
 
@@ -12,7 +12,7 @@ fespace Vh(cub, P1);
 Vh T, v;
 
 func q = 1;
-func k = sin(5 * x * y) * 0.5 + 1;
+func k = 10 * x + 2 * y * z + 1;
 
 solve Poin(T, v) =
     int3d(cub)(
