@@ -1,0 +1,34 @@
+load "msh3"
+load "iovtk"
+
+int n = 20;
+int[int] lbl = [0, 1, 2, 3, 4, 5];
+mesh3 cub = cube(n, n, n, label = lbl, region = 6);
+
+plot(cub, wait = 1);
+
+fespace Vh(cub, P1);
+
+Vh T, v;
+
+func q = 1;
+func k = sin(5 * x * y) * 0.5 + 1;
+
+solve Poin(T, v) =
+    int3d(cub)(
+    	k * (
+        dx(T) * dx(v)
+        + dy(T) * dy(v)
+        + dz(T) * dz(v)
+        )
+    )
+    - int3d(cub)(
+          q * v
+    )
+    + on(1, T = 0)
+    + on(2, T = 2);
+
+int[int] Order = [1];
+savevtk("3DTemp.vtu", cub, T, order = Order);
+
+plot(T, wait = 1, fill = true);
