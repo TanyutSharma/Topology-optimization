@@ -1,10 +1,14 @@
 import numpy as np
 
 n = 10
-maxIters = 1000
+maxIters = 2000
 delta = 0.0001       # for finding partial derivatives
-eta = 0.02              # step for gradient descent
-cutoff = 10 ** (-4)  # when to stop
+eta = 0.01           # step for gradient descent
+cutoff = 10 ** (-8)  # when to stop
+
+# The current code maximises f(x)
+# Maximum is at x = [1, 1, 1, ...]
+# Minimum is at x = [0, 0, 0, ...]
 
 def f(x):
     out = 0
@@ -54,10 +58,11 @@ while norm > cutoff and maxIters > 0:
     if maxIters % 10 == 0 :
         print(norm)
     
-    p = p - (pGrad * eta)
+    p = p + (pGrad * eta)
     
     maxIters -= 1
 print(norm)
+print("\n\n")
 
 print(xp)
 print("Xp ^^ \n")
