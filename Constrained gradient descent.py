@@ -47,6 +47,7 @@ while norm > cutoff and maxIters > 0:
     fx = f(xp)
     
     delF = np.array([f(xp + np.array([0 if i != j else delta for j in range(n)])) - fx for i in range(n)])
+    delF = delF / delta
     
     q2 = delB - np.array([[np.sum(np.array([delA[i][k][j] * xp[i] for i in range(n)])) for j in range(n)] for k in range(n)])
     
