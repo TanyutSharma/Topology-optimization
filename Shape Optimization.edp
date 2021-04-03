@@ -1,0 +1,136 @@
+real Lx = 1.0;
+real Ly = 2.0;
+real nymesh = 80.0;
+real nxmesh = 50.0;
+
+real xc = Lx / 1.5;
+real yc = Ly / 3;
+real F = 20.0;
+real r = 0.1;
+
+real alpha = 0.01;
+real dt = 0.0;
+
+border a(t = 0, Ly) {x = 0; y = Ly - t; label = 1;}
+border b(t = 0, Lx) {x = t; y = 0; label = 2;}
+border c(t = 0, Ly) {x = Lx; y = t; label = 3;}
+border d(t = 0, Lx) {x = Lx - t; y = Ly; label = 4;}
+
+mesh Th = buildmesh(a(nymesh) + b(nxmesh) + c(nymesh) + d(nxmesh));
+
+fespace Vh2d(Th, P1);
+
+Vh2d u, v, p, pv;
+
+real u0 = 0.1;
+Vh2d U0 = u0;
+
+real h0 = 0.20;
+Vh2d h = h0;
+Vh2d hr;
+
+real minh = 0.1, maxh = 1.0;
+real hfrac = int2d(Th) (h0);
+real l0 = 0.0;
+real l1 = 1.0;
+real lmid = 0.5;
+real lerr = 0.001;
+real proj0 = 0.0, proj1 = 0.0, projmid = 0.0;
+
+func f = F * exp(-((x - xc) ^ 2 + (y - yc) ^ 2) / (2.0 * r * r));
+int maxiter = 50;
+
+real D = 1;
+real xd = Lx / 3;
+real yd = Ly / 2;
+func d0 = D * exp(-((x - xc) ^ 2 + (y - yc) ^ 2) / (2.0 * r * r * 0.1));
+
+real eps = 0.003;
+problem regularization(hr, v)
+	= int2d(Th) (
+		eps ^ 2 * (dx(hr) * dx(v) + dy(hr) * dy(v)) + hr * v
+	)
+	- int2d(Th) (
+		h * v
+	);
+
+while(maxiter > 0) {
+	solve Membrane (u, v)
+		= int2d(Th) (
+			h * (dx(u) * dx(v) + dy(u) * dy(v))
+		)
+		- int2d(Th) (
+			f * v
+		)
+		+ on(1, u = 0)
+		+ on(2, u = 0)
+		+ on(3, u = 0)
+		+ on(4, u = 0);
+
+	solve Adjointe (p, pv)
+		= int2d(Th) (
+			h * (dx(p) * dx(pv) + dy(p) * dy(pv)) + p * pv
+		)
+		+ int2d(Th) (
+			d0 * pv
+		)
+		+ on(1, p = 0)
+		+ on(2, p = 0)
+		+ on(3, p = 0)
+		+ on(4, p = 0);
+	//plot(p, wait = 1);
+	Vh2d dJ = (dx(p) * dx(u) + dy(p) * dy(u));
+
+	dt = alpha / max(h[].max, -h[].min);
+
+	h = h - dt * dJ;
+
+	proj0 = int2d(Th) (max(minh, min(maxh, (h + l0))));
+	proj1 = int2d(Th) (max(minh, min(maxh, (h + l1))));
+
+	while(proj0 > hfrac) {
+		l0 -= 0.1;
+		proj0 = int2d(Th) (max(minh, min(maxh, (h + l0))));
+	}
+
+	while(proj1 < hfrac) {
+		l1 += 0.1;
+		proj1 = int2d(Th) (max(minh, min(maxh, (h + l1))));
+	}
+
+	while((l1 - l0) > lerr) {
+		lmid = 0.5 * (l0 + l1);
+		projmid = int2d(Th) (max(minh, min(maxh, (h + lmid))));
+
+		if(projmid < hfrac) {
+			l0 = lmid;
+			proj0 = projmid;
+		} else {
+			l1 = lmid;
+			proj1 = projmid;
+		}
+	}
+
+	h = max(minh, min(maxh, (h + lmid)));
+
+	regularization;
+	h = hr;
+
+	plot(h, fill = true);
+
+	maxiter--;
+}
+
+plot(h, wait = 1, fill = 1);
+plot(u, wait = 1, fill = 1);
+
+/*savemesh(Th, "u", [x, y, h*.5]);
+
+ofstream file("u.bb");
+file << "2 1 1 " << h[].n << " 2 \n";
+for (int j = 0; j < h[].n; j++)
+   file << h[][j] << endl;
+
+
+exec("ffmedit u");
+exec("del u.bb u.faces u.points");*/
