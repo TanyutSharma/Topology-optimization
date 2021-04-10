@@ -1,0 +1,109 @@
+
+// Modified shape optimization
+
+// Restrictions on the total material available were removed.
+//This demonstrates a point displacement that is not aligned with a point force.
+
+
+// The displayed plots are of the displacement not the thickness.
+
+real Lx = 1.0;
+real Ly = 2.0;
+real nymesh = 160.0 / 2;
+real nxmesh = 100.0 / 2;
+
+//Position of force
+real xc = Lx / 2;
+real yc = Ly / 4;
+
+real F = 1.0;
+real r = 0.2;
+
+real alpha = 6.0;
+real dt = 0.0;
+
+border a(t = 0, Ly) {x = 0; y = Ly - t; label = 1;}
+border b(t = 0, Lx) {x = t; y = 0; label = 2;}
+border c(t = 0, Ly) {x = Lx; y = t; label = 3;}
+border d(t = 0, Lx) {x = Lx - t; y = Ly; label = 4;}
+
+mesh Th = buildmesh(a(nymesh) + b(nxmesh) + c(nymesh) + d(nxmesh));
+
+fespace Vh2d(Th, P1);
+
+Vh2d u, v, p, pv;
+
+real u0 = 0.1;
+Vh2d U0 = u0;
+
+real h0 = 0.5;
+Vh2d h = h0;
+Vh2d hr;
+
+real minh = 0.01, maxh = 20;
+
+func f = F * exp(-((x - xc) ^ 2 + (y - yc) ^ 2) / (2.0 * r * r));
+int maxiter = 300;
+
+real D = 30;
+//Position of displacement.
+real xd = Lx / 2;
+real yd = Ly / 2;
+func d0 = D * exp(-((x - xd) ^ 2 + (y - yd) ^ 2) / (2.0 * r * r * 0.001));
+
+real target = 100.0;
+
+real epsi = 0.005;
+problem regularization(hr, v)
+	= int2d(Th) (
+		epsi ^ 2 * (dx(hr) * dx(v) + dy(hr) * dy(v)) + hr * v
+	)
+	- int2d(Th) (
+		h * v
+	);
+
+while(maxiter > 0) {
+	solve Membrane (u, v)
+		= int2d(Th) (
+			h * (dx(u) * dx(v) + dy(u) * dy(v))
+		)
+		- int2d(Th) (
+			f * v
+		)
+		+ on(1, u = 0)
+		+ on(2, u = 0)
+		+ on(3, u = 0)
+		+ on(4, u = 0);
+
+	solve Adjointe (p, pv)
+		= int2d(Th) (
+			h * (dx(p) * dx(pv) + dy(p) * dy(pv))
+		)
+		+ int2d(Th) (
+			(u - d0) * pv
+		)
+		+ on(1, p = 0)
+		+ on(2, p = 0)
+		+ on(3, p = 0)
+		+ on(4, p = 0);
+
+	Vh2d dJ = (dx(p) * dx(u) + dy(p) * dy(u));
+
+	dt = alpha;
+
+	h = h - dt * dJ;
+	h = max(minh, h);
+	h = min(maxh, h);
+	regularization;
+	h = hr;
+
+	target = int2d(Th) ( 0.5 * (u - d0) * (u - d0) );
+	cout << endl << "                  TARGET  ->  " << target << "    ITERATION  ->  " << maxiter << endl << endl;
+
+	//plot(h, fill = true, grey = true);
+	plot(u, fill = true, grey = true);  // I am only plotting u to see how the displacement 'flows' to the center.
+
+	maxiter--;
+}
+
+plot(u, wait = 1, fill = 1, grey = true);
