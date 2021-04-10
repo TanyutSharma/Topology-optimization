@@ -1,14 +1,22 @@
-real Lx = 1.0;
-real Ly = 2.0;
-real nymesh = 80.0;
-real nxmesh = 50.0;
 
-real xc = Lx / 1.5;
+// Standard shape optimization
+
+// Force is slightly offsetted from center while targeted displacement is at the center.
+
+
+real Lx = 2.0;
+real Ly = 1.0;
+real nymesh = 160.0 / 2;
+real nxmesh = 100.0 / 2;
+
+//Position of force
+real xc = Lx / 2;
 real yc = Ly / 3;
-real F = 20.0;
-real r = 0.1;
 
-real alpha = 0.01;
+real F = 1.0;
+real r = 0.5;
+
+real alpha = 0.12;
 real dt = 0.0;
 
 border a(t = 0, Ly) {x = 0; y = Ly - t; label = 1;}
@@ -22,14 +30,11 @@ fespace Vh2d(Th, P1);
 
 Vh2d u, v, p, pv;
 
-real u0 = 0.1;
-Vh2d U0 = u0;
-
-real h0 = 0.20;
+real h0 = 0.5;
 Vh2d h = h0;
 Vh2d hr;
 
-real minh = 0.1, maxh = 1.0;
+real minh = 0.04, maxh = 2.0;
 real hfrac = int2d(Th) (h0);
 real l0 = 0.0;
 real l1 = 1.0;
@@ -38,17 +43,21 @@ real lerr = 0.001;
 real proj0 = 0.0, proj1 = 0.0, projmid = 0.0;
 
 func f = F * exp(-((x - xc) ^ 2 + (y - yc) ^ 2) / (2.0 * r * r));
-int maxiter = 50;
+int maxiter = 200;
 
-real D = 1;
-real xd = Lx / 3;
+real D = 200.0;
+
+//Position of displacement.
+real xd = Lx / 2;
 real yd = Ly / 2;
-func d0 = D * exp(-((x - xc) ^ 2 + (y - yc) ^ 2) / (2.0 * r * r * 0.1));
+func d0 = D * exp(-((x - xd) ^ 2 + (y - yd) ^ 2) / (2.0 * r * r * 0.0002));
 
-real eps = 0.003;
+real target = 0.0;
+
+real epsi = 0.02;
 problem regularization(hr, v)
 	= int2d(Th) (
-		eps ^ 2 * (dx(hr) * dx(v) + dy(hr) * dy(v)) + hr * v
+		epsi ^ 2 * (dx(hr) * dx(v) + dy(hr) * dy(v)) + hr * v
 	)
 	- int2d(Th) (
 		h * v
@@ -69,19 +78,20 @@ while(maxiter > 0) {
 
 	solve Adjointe (p, pv)
 		= int2d(Th) (
-			h * (dx(p) * dx(pv) + dy(p) * dy(pv)) + p * pv
+			h * (dx(p) * dx(pv) + dy(p) * dy(pv))
 		)
 		+ int2d(Th) (
-			d0 * pv
+			(u - d0) * pv
 		)
 		+ on(1, p = 0)
 		+ on(2, p = 0)
 		+ on(3, p = 0)
 		+ on(4, p = 0);
-	//plot(p, wait = 1);
+
 	Vh2d dJ = (dx(p) * dx(u) + dy(p) * dy(u));
 
-	dt = alpha / max(h[].max, -h[].min);
+	//dt = alpha / max(h[].max, -h[].min);
+	dt = alpha;
 
 	h = h - dt * dJ;
 
@@ -116,21 +126,12 @@ while(maxiter > 0) {
 	regularization;
 	h = hr;
 
-	plot(h, fill = true);
+	target = int2d(Th) ( 0.5 * (u - d0) * (u - d0) );
+	cout << endl << "                  TARGET  ->  " << target << "    ITERATION  ->  " << maxiter << endl << endl;
+
+	plot(h, fill = true, grey = true);
 
 	maxiter--;
 }
 
-plot(h, wait = 1, fill = 1);
-plot(u, wait = 1, fill = 1);
-
-/*savemesh(Th, "u", [x, y, h*.5]);
-
-ofstream file("u.bb");
-file << "2 1 1 " << h[].n << " 2 \n";
-for (int j = 0; j < h[].n; j++)
-   file << h[][j] << endl;
-
-
-exec("ffmedit u");
-exec("del u.bb u.faces u.points");*/
+plot(u, wait = 1, fill = 1, grey = true);
