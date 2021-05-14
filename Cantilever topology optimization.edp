@@ -22,7 +22,6 @@ func h0temp = h0;
 real epsVoid = 0.0001;
 
 Vh ux, uy, vx, vy;
-//Vh2d [px, py], [pvx, pvy];
 
 Vh h = h0temp, dJ, v, hr;
 real hfrac = int2d(Th) (h);
