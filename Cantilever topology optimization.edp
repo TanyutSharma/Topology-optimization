@@ -51,7 +51,7 @@ func forceLoc = (x > (Lx - thick)) && (x <= Lx + thick) && (y > ((Ly - loadWidth
 //Vh temp = forceLoc;
 //plot(temp, wait = 1);
 
-problem primal([ux, uy], [vx, vy]) =
+problem primal(ux, uy, vx, vy) =
 	int2d(Th) (
 		(zeta(h) + (1. - zeta(h)) * epsVoid) * (lambda * tr(ux, uy) * tr(vx, vy)
 		+ 2 * mu * (dx(vx) * dx(ux) + dy(vy) * dy(uy) + (dy(ux) + dx(uy)) * (dy(vx) + dx(vy)) / 2))
