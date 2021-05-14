@@ -1,0 +1,128 @@
+
+real Lx = 4.0;
+real Ly = 1.0;
+real nymesh = 50.;
+real nxmesh = nymesh * Lx / Ly;
+
+real ty = -1., tx = 0.;
+real loadWidth = 0.06 * Ly;
+
+border a(t = 0, Ly) {x = 0; y = Ly - t; label = 1;}
+border b(t = 0, Lx) {x = t; y = 0; label = 2;}
+border c(t = 0, Ly) {x = Lx; y = t; label = 3;}
+border d(t = 0, Lx) {x = Lx - t; y = Ly; label = 4;}
+
+mesh Th = buildmesh(a(nymesh) + b(nxmesh) + c(nymesh) + d(nxmesh));
+//plot(Th, wait = 1);
+fespace Vh2d(Th, [P1, P1]);
+fespace Vh(Th, P1);
+
+real hmin = 0., hmax = 1., h0 = 0.4;
+func h0temp = h0;
+real epsVoid = 0.0001;
+
+Vh2d [ux, uy], [vx, vy];
+//Vh2d [px, py], [pvx, pvy];
+//[ux, uy] = [x*x + y, y*y*y * 3*x*x];
+
+Vh h = h0temp, dJ, v, hr;
+real hfrac = int2d(Th) (h);
+
+real l0 = -0.5 * h0;
+real l1 = 1.5 * h0;
+real lmid = 0.5 * (l0 + l1);
+real dl = 0.1 * h0;
+real lerr = 0.001;
+
+macro tr(u1, u2) (dx(u1) + dy(u2)) //
+
+int n = 3;
+
+macro zeta(t) t ^ n //
+macro dZeta(t) n * t ^ (n - 1) //
+
+real thick = 0.01;
+
+real E = 1.0;
+real nu = 0.33;
+
+real mu = E / (2.0 * (1 + nu));
+real lambda = E * nu / ((1 + nu) * (1 - 2 * nu));
+
+func forceLoc = (x > (Lx - thick)) && (x <= Lx + thick) && (y > ((Ly - loadWidth) / 2)) && (y < ((Ly + loadWidth) / 2));
+//Vh temp = forceLoc;
+//plot(temp, wait = 1);
+
+problem primal([ux, uy], [vx, vy]) =
+	int2d(Th) (
+		(zeta(h) + (1. - zeta(h)) * epsVoid) * (lambda * tr(ux, uy) * tr(vx, vy)
+		+ 2 * mu * (dx(vx) * dx(ux) + dy(vy) * dy(uy) + (dy(ux) + dx(uy)) * (dy(vx) + dx(vy)) / 2))
+	)
+	- int1d(Th, 2, 3, 4) (
+		forceLoc * (tx * vx + ty * vy)
+	)
+	+ on(1, ux = 0, uy = 0);
+
+real epsi = 0.01;
+problem regularization(hr, v)
+	= int2d(Th) (
+		epsi ^ 2 * (dx(hr) * dx(v) + dy(hr) * dy(v)) + hr * v
+	)
+	- int2d(Th) (
+		h * v
+	);
+
+macro proj(l) int2d(Th) (max(hmin, min(hmax, (h + l)))) //
+
+real proj0 = proj(l0), proj1 = proj(l1), projmid = proj(lmid);
+
+real dt = 0.01;
+
+int outat = 5;
+
+int maxIters = 300;
+while(maxIters > 0) {
+	primal;
+
+	dJ = -(1. - epsVoid) * dZeta(h) * ((2 * mu + lambda) * (dx(ux) ^ 2 + dy(uy) ^ 2) + 2 * lambda * dx(ux) * dy(uy) + mu * ((dx(uy) + dy(ux)) ^ 2));
+
+	h = h - dt * (dJ);
+	proj0 = proj(l0);
+	proj1 = proj(l1);
+
+	while(proj0 > hfrac) {
+		l0 -= dl;
+		proj0 = proj(l0);
+	}
+	while(proj1 < hfrac) {
+		l1 += dl;
+		proj1 = proj(l1);
+	}
+	while((l1 - l0) > lerr) {
+		lmid = 0.5 * (l0 + l1);
+		projmid = proj(lmid);
+
+		if(projmid < hfrac) {
+			l0 = lmid;
+			proj0 = projmid;
+		} else {
+			l1 = lmid;
+			proj1 = projmid;
+		}
+	}
+	h = max(hmin, min(hmax, (h + lmid)));
+	regularization;
+	h = hr;
+
+	if(maxIters % outat == 0) {
+		plot(h, wait = 0, fill = 1);
+	}
+
+	cout << endl << endl << maxIters << endl << endl;
+
+	maxIters -= 1;
+}
+
+primal;
+
+plot(h, wait = 1,fill = 1);
