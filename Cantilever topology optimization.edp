@@ -78,7 +78,7 @@ real dt = 0.01;
 
 int outat = 5;
 
-int maxIters = 300;
+int maxIters = 200;
 while(maxIters > 0) {
 	primal;
 
