@@ -14,16 +14,15 @@ border d(t = 0, Lx) {x = Lx - t; y = Ly; label = 4;}
 
 mesh Th = buildmesh(a(nymesh) + b(nxmesh) + c(nymesh) + d(nxmesh));
 //plot(Th, wait = 1);
-fespace Vh2d(Th, [P1, P1]);
+
 fespace Vh(Th, P1);
 
 real hmin = 0., hmax = 1., h0 = 0.4;
 func h0temp = h0;
 real epsVoid = 0.0001;
 
-Vh2d [ux, uy], [vx, vy];
+Vh ux, uy, vx, vy;
 //Vh2d [px, py], [pvx, pvy];
-//[ux, uy] = [x*x + y, y*y*y * 3*x*x];
 
 Vh h = h0temp, dJ, v, hr;
 real hfrac = int2d(Th) (h);
