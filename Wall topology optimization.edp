@@ -1,0 +1,334 @@
+//I have taken all constants to match with the ones used in the paper as far as possible.
+
+real Lx = 2., Ly = 1.;
+//Shape of the total domain.
+
+real rho = 1., viscosity = 1.;
+real vInflowMax = 1.;
+func inFlow = -vInflowMax * 4 * y * (y - Ly) / (Ly ^ 2); //Parabolic in-flow and out-flow profile.
+//The physical parameters of the fluid
+
+int in = 1, out = 2, top = 3, ground = 4, FSboundary = 5, insideB = 6, groundOut = 7;
+//Label numbers for various boundaries. 
+//'ground' is the label for the bottom surface inside the design region, 'groundOut' is the one for the bottom region outside the design area.
+//'FSboundary' = Fluid Solid Boundary
+//'insideB' is not used
+
+real wallPos, wallThick = 0.05, wallHeight = 0.5, designLen = 0.3;
+wallPos = (Lx - wallThick) / 2;
+//Defines the location of the fixed rectangular wall. 'designLen' is the gap between the design area and the left and right walls.
+
+// Defines the total rectangular mesh and labels.
+border b0(t = 0, Ly) {x = 0; y = t; label = in;}
+border b1(t = 0, Lx) {x = t; y = Ly; label = top;}
+border b2(t = Ly, 0) {x = Lx; y = t; label = out;}
+
+border b3(t = Lx, Lx - designLen) {x = t; y = 0; label = groundOut;}
+border b4(t = Lx - designLen, wallPos + wallThick) {x = t; y = 0; label = ground;}
+border b5(t = wallPos + wallThick, wallPos) {x = t; y = 0; label = ground;}
+border b6(t = wallPos, designLen) {x = t; y = 0; label = ground;}
+border b7(t = designLen, 0) {x = t; y = 0; label = groundOut;}
+
+border i0(t = 0., wallHeight) {x = wallPos; y = t; label = insideB;}
+border i1(t = wallPos, wallPos + wallThick) {x = t; y = wallHeight; label = insideB;}
+border i2(t = wallHeight, 0.) {x = wallPos + wallThick; y = t; label = insideB;}
+
+real nmesh = 90., nwall = nmesh / 1.5;
+
+nmesh = -nmesh;
+mesh Th = buildmesh(b0(nmesh * Ly / Lx) + b1(nmesh) + b2(nmesh * Ly / Lx) + b3(nmesh * designLen / Lx) + b4(nmesh * (Lx - designLen - wallPos - wallThick) / Lx) + b5(nmesh * wallThick / Lx) + b6(nmesh * (wallPos - designLen) / Lx) + b7(nmesh * designLen / Lx) + i0(nwall) + i1(nwall * wallThick / wallHeight) + i2(nwall));
+mesh Thmain = Th;
+//This builds the mesh and backs it up in 'Thmain' since 'Th' will be edited later.
+
+fespace Mh(Th, P1);
+fespace Xh(Th, P2);
+
+int n = 3;
+macro zeta(H) (H ^ n) //
+macro dZeta(H) (n * H ^ (n - 1)) //
+//Interpolation function
+
+Mh h, hOri, hold; //h is the shape of rigid structure. The other two variables are used to fix the central wall.
+
+Mh design = (x >= designLen && x <= Lx - designLen && y <= 0.8);
+//Defines the design area, h is zero outside this.
+
+h = (x >= wallPos && x <= wallPos + wallThick && y <= wallHeight);
+hOri = h;
+//Defines the location of the fixed rectangular wall.
+
+h = h + (design - hOri) * 0.0777;
+//Ensures volume fraction = 0.1
+
+hold = h;
+
+
+
+Mh noHoles, vNoHoles;
+//This is used to remove holes from a mesh that contains inner and outer boundaries marked with the FSboundary label.
+real noHoleCutoff = 1e-10;
+
+//Solves a membrane equation such that 'noHoles' is zero everywhere inside the outermost FSboundary.
+problem HoleRemover (noHoles, vNoHoles)
+	= int2d(Th) (
+		(dx(noHoles) * dx(vNoHoles) + dy(noHoles) * dy(vNoHoles))
+	)
+	+ on(in, top, out, groundOut, noHoles = -1e10)
+	+ on(FSboundary, noHoles = 0);
+
+
+
+real errCutoffVel = 1e-5, errCutoffp = 1e-2, hCutoff = 0.2;
+//Defines cutoff values for convergence and for obtaining a sharp characteristic function from a smooth one.
+
+Mh p, q, dp;
+Xh ux, uy, vx, vy, dux, duy, plotter;
+//p: pressure, dp: change in pressure from an iteration in Newton's method, q: test function
+//u: velocity, v: test function, plotter: used for plotting
+
+Mh dJ;
+//Gradient of the objective function.
+
+
+
+real epsilo = 1e-10, alpha = 1e9;
+
+//These are the Stokes and Newton PDEs which are used to solve the NS equations.
+//The code considers zeta(h) >= hCutoff to define the boundary on which the no-slip condition is applied.
+//I am using a penalty term to implement the no slip condition as I found that it gives correct results in the benchmark I performed.
+problem Stokes (ux, uy, p, vx, vy, q) = 
+	int2d(Th) (
+		viscosity * (dx(ux) * dx(vx) + dy(ux) * dy(vx) + dx(uy) * dx(vy) + dy(uy) * dy(vy))
+		+ (vx * dx(p) + vy * dy(p))
+		+ (zeta(h) >= hCutoff) * alpha * (ux * vx + uy * vy)
+		- p * q * epsilo
+		- dx(ux) * q - dy(uy) * q
+	)
+	+ on(out, p = 0.)
+	+ on(in, out, ux = inFlow, uy = 0.)
+	+ on(top, ground, groundOut, ux = 0., uy = 0.);
+
+problem Newton (dux, duy, dp, vx, vy, q) =
+	int2d(Th) (
+		viscosity * (dx(dux) * dx(vx) + dy(dux) * dy(vx) + dx(duy) * dx(vy) + dy(duy) * dy(vy))
+		+ rho * vx * (dux * dx(ux) + duy * dy(ux) + ux * dx(dux) + uy * dy(dux))
+		+ rho * vy * (dux * dx(uy) + duy * dy(uy) + ux * dx(duy) + uy * dy(duy))
+		+ vx * dx(dp) + vy * dy(dp)
+		+ (zeta(h) >= hCutoff) * alpha * (dux * vx + duy * vy)
+		- dp * q * epsilo
+		- dx(dux) * q - dy(duy) * q
+	)
+	+ int2d(Th) (
+		viscosity * (dx(ux) * dx(vx) + dy(ux) * dy(vx) + dx(uy) * dx(vy) + dy(uy) * dy(vy))
+		+ rho * vx * (ux * dx(ux) + uy * dy(ux))
+		+ rho * vy * (ux * dx(uy) + uy * dy(uy))
+		+ vx * dx(p) + vy * dy(p)
+		+ (zeta(h) >= hCutoff) * alpha * (ux * vx + uy * vy)
+		- p * q * epsilo
+		- dx(ux) * q - dy(uy) * q
+	)
+	+ on(out, dp = 0.)
+	+ on(top, ground, groundOut, in, out, dux = 0., duy = 0.);
+
+
+
+real E = 200000.;
+real nu = 0.33;
+
+real mu = E / (2.0 * (1 + nu));
+real lambda = E * nu / ((1 + nu) * (1 - 2 * nu));
+
+macro trace(u1, u2) (dx(u1) + dy(u2)) //
+
+Mh Dx, Dy, Vx, Vy, dAdjx, dAdjy;
+//The solid displacements are Dx and Dy, Vx and Vy are test functions, the last two are adjoint variables.
+
+real epsVoid = 0.000001;
+
+macro Eps(H) ((1 - epsVoid) * zeta(H) + epsVoid) //
+macro dEps(H) ((1 - epsVoid) * dZeta(H)) //
+//These are the physical parameters of the solid.
+
+//The elastic equation.
+problem ElasticPrimal(Dx, Dy, Vx, Vy) =
+	int2d(Th) (
+		Eps(h) * (lambda * trace(Dx, Dy) * trace(Vx, Vy)
+		+ 2 * mu * (dx(Vx) * dx(Dx) + dy(Vy) * dy(Dy) + trace(Dy, Dx) * trace(Vy, Vx) / 2.))
+	) - int1d(Th, FSboundary) (
+		p * (N.x * Vx + N.y * Vy) //The pressure is applied here as a surface force. This integrates only over the outer surface of the structure since the inner surfaces would not be labelled 'FSboundary'.
+		//p: pressure, N.x and N.y: normal components provided by freefem.    *************************
+		//I benchmarked applying the forces in this manner vs the standard method and obtained the same results.
+	)
+	+ on(ground, Dx = 0, Dy = 0);
+
+//The objective function is:   int2d(Th) (  epsilon(D) * sigma(D)  )          *************************
+// where D is the solid displacements.
+//This objective function was used in the paper I am following.
+
+problem ElasticAdjoint(dAdjx, dAdjy, Vx, Vy) =
+	int2d(Th) (
+		Eps(h) * (lambda * trace(dAdjx, dAdjy) * trace(Vx, Vy)
+		+ 2 * mu * (dx(Vx) * dx(dAdjx) + dy(Vy) * dy(dAdjy) + trace(dAdjy, dAdjx) * trace(Vy, Vx) / 2.))
+	) + int2d(Th) (
+		2 * Eps(h) * (lambda * trace(Vx, Vy) * trace(Dx, Dy) + mu * (2 * (dx(Vx) * dx(Dx) + dy(Vy) * dy(Dy)) + trace(Vy, Vx) * trace(Dy, Dx)))
+	)
+	+ on(ground, dAdjx = 0, dAdjy = 0);
+
+
+//Implements regularization.
+real epsi = 0.003;
+Mh hr, v;
+problem regularization(hr, v)
+	= int2d(Th) (
+		epsi ^ 2 * (dx(hr) * dx(v) + dy(hr) * dy(v)) + hr * v
+	)
+	- int2d(Th) (
+		h * v
+	);
+
+
+//These are variables for the bisection algorithm.
+real l0 = -0.5;
+real l1 = 0.5;
+real lmid = 0.5 * (l0 + l1);
+real dl = 0.1;
+real lerr = 0.0001;
+
+//The projection operator.
+macro proj(ll) int2d(Thmain) ((design - hOri) * max(0., min(1., (h + ll)))) //
+
+real hfrac = proj(0.);
+real proj0 = proj(l0), proj1 = proj(l1), projmid = proj(lmid);
+
+
+//Some necessary counters.
+int topologyIters = 0, Jiter = 0;
+
+//dt is used for each TO step.
+real dt = 0.0014, dJmag = 1.;
+
+//Used to skip solving the NS equations if the boundary of the structure has not changed since the solution would also not change in that case.
+bool skip = false;
+
+real [int] Js(1000); //Used to keep track of the objective function's value.
+
+while(topologyIters < 80) {
+	int iter = 0; //For the newton's method in navier stokes.
+
+	Th = trunc(Thmain, zeta(h) < hCutoff, label = FSboundary) + trunc(Thmain, zeta(h) >= hCutoff, label = FSboundary);
+	//After this, Th contains both the inner and outer boundaries labelled with 'FSboundary'
+	//The boundaries are defined by zeta(h) >= hCutoff similarly to the fluid equations (line 97).
+
+	HoleRemover;
+
+	Th = trunc(Thmain, noHoles <= -1e-10, label = FSboundary) + trunc(Thmain, noHoles >= -1e-10, label = FSboundary);
+	//After this, only the outer boundary is labelled with 'FSboundary'
+
+	//plot(Th, wait = 1);
+
+	if(!skip) {
+		Stokes; //Initializes the NS solver.
+	} else {
+		iter = 1000;
+	}
+
+	while(iter < 20) {
+		Newton;
+
+		ux[] += dux[];
+		uy[] += duy[];
+		p[] += dp[];
+
+		cout << endl << "NS iter  :  " << iter << "   ------   " << topologyIters << endl;
+
+		//plotter = sqrt(ux * ux + uy * uy);
+		//plotter = q;
+		//plot(plotter, wait = 0, fill = 1, grey = 1);
+
+		iter++;
+
+		if(dp[].max < errCutoffp && dp[].min > -errCutoffp && dux[].max < errCutoffVel && dux[].min > -errCutoffVel && duy[].max < errCutoffVel && duy[].min > -errCutoffVel) {
+			break;
+		}
+	}
+	//This loop solves the NS equations.
+
+
+	//Solves the elastic equations.
+	ElasticPrimal;
+	ElasticAdjoint;
+
+
+	//dJ = -dEps(h) * ((2 * mu + lambda) * (dx(Dx) ^ 2 + dy(Dy) ^ 2) + 2 * lambda * dx(Dx) * dy(Dy) + mu * ((dx(Dy) + dy(Dx)) ^ 2));
+	dJ = dEps(h) * (2 * mu * (dx(Dx) * dx(dAdjx) + dy(Dy) * dy(dAdjy) + trace(Dy, Dx) * trace(dAdjy, dAdjx)) + lambda * (trace(Dx, Dy) * trace(dAdjx, dAdjy)));
+	//Obtains the objective's gradient. The commented out one is the self-adjoint case.
+
+
+	//An optimization that I had discovered earlier, it increases the value of 'dt' when 'dJ' starts to become small. The results do not change when this optimization is removed.
+	dJmag = int2d(Th) (design * dJ ^ 2);
+	real adt = min(dt * 500, max(dt, dt * 20 / (dJmag)));
+
+	h = h - adt * dJ;
+
+	//Implements the bisection algorithm for projecting h.
+	proj0 = proj(l0);
+	proj1 = proj(l1);
+
+	while(proj0 > hfrac) {
+		l0 -= dl;
+		proj0 = proj(l0);
+	}
+	while(proj1 < hfrac) {
+		l1 += dl;
+		proj1 = proj(l1);
+	}
+	while((l1 - l0) > lerr) {
+		lmid = 0.5 * (l0 + l1);
+		projmid = proj(lmid);
+
+		if(projmid < hfrac) {
+			l0 = lmid;
+			proj0 = projmid;
+		} else {
+			l1 = lmid;
+			proj1 = projmid;
+		}
+	}
+	h = (design - hOri) * max(0., min(1., (h + lmid))) + hOri;
+
+
+	regularization;
+	h = hr;
+
+	h = (h * design);
+	h = max(h, hOri);
+	//h is now regularized and is 0 outside the design area and 1 inside the fixed wall.
+
+	plot(h, wait = 0, fill = 1, grey = 1);
+	//The 'FSboundary' label will be seen as a distinct outline in this plot.
+
+	//Calculates the objective function to ensure convergence.
+	Js[Jiter] = int2d(Th) (Eps(h) * (lambda * (trace(Dx, Dy) ^ 2) + mu * (trace(Dy, Dx) ^ 2 + 2 * (Dx ^ 2 + Dy ^ 2))));
+	cout << endl << endl << Js[Jiter] << "    J " << endl;
+	Jiter++;
+
+	//The following code detects whether the boundary has changed and whether we should solve the NS equations the next iteration.
+	skip = true;
+
+	for(int i = 0; i < h[].n; i++) {
+		if((zeta(h[][i]) >= hCutoff) != (zeta(hold[][i]) >= hCutoff)) {
+			skip = false;
+		}
+	}
+	hold = h;
+
+	topologyIters++;
+	cout << endl << "TO iter  :  " << topologyIters << "   --------------------" << endl;
+}
+
+//Outputs the objective function values together for convenience.
+cout << endl << endl;
+for(int i = 0; i < Js.n; i++) {
+	cout << Js[i] << ", ";
+}
+cout << endl << endl;
